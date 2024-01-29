@@ -5,6 +5,7 @@ package modules
 import (
 	"fmt"
 	"log"
+        "strings"
 	"os/exec"
 	"os/user"
 	"syscall"
@@ -115,6 +116,62 @@ func (g *UserModule) removeUser(args map[string]interface{}) error {
 	cmdArgs := []string{"userdel", login}
 
 	// do we need to enhance our permissions?
+	privs := StringParam(args, "elevate")
+	if privs != "" {
+		cmdArgs = append([]string{privs}, cmdArgs...)
+	}
+
+	// Show what we're doing
+	log.Printf("[DEBUG] Running %s", cmdArgs)
+
+	// Run it
+	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	// Wait for completion
+	if err := cmd.Wait(); err != nil {
+
+		if exiterr, ok := err.(*exec.ExitError); ok {
+
+			if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+				return fmt.Errorf("exit code was %d", status.ExitStatus())
+			}
+		}
+	}
+
+	return nil
+}
+
+func (g *UserModule) getGroups(args map[string]interface{}) []string {
+
+	groups := []string{}
+
+        // Single group?
+	group := StringParam(args, "group")
+	if group != "" {
+		groups = append(groups, group)
+	}
+
+	// Array of groups?
+	a := ArrayParam(args, "group")
+	if len(a) > 0 {
+		groups = append(groups, a...)
+	}
+
+	return groups
+}
+
+//modify the local user
+func (g *UserModule) setSupplementaryGroups(args map[string]interface{}) error {
+
+	login := StringParam(args, "login")
+
+	groups := strings.Join(g.getGroups(args)[:], ",")
+
+	// The user-modify command
+	cmdArgs := []string{"usermod", "-G", groups , login}
 	privs := StringParam(args, "elevate")
 	if privs != "" {
 		cmdArgs = append([]string{privs}, cmdArgs...)
